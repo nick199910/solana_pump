@@ -4,16 +4,14 @@ use solana_program::pubkey;
 use solana_sdk::pubkey::Pubkey;
 use std::env;
 use std::{collections::HashMap, time::Duration};
-use yellowstone_grpc_client::{ClientTlsConfig, GeyserGrpcBuilder, GeyserGrpcClient, Interceptor};
+use yellowstone_grpc_client::{ClientTlsConfig, GeyserGrpcClient, Interceptor};
 use yellowstone_grpc_proto::{
     geyser::{
-        geyser_client::GeyserClient, CommitmentLevel, SubscribeRequest,
-        SubscribeRequestFilterAccounts, SubscribeRequestFilterBlocks,
-        SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterTransactions, SubscribeUpdate,
+        CommitmentLevel, SubscribeRequest, SubscribeRequestFilterTransactions, SubscribeUpdate,
     },
     tonic::Status,
 };
-/// grpc需要的交易过滤map
+
 type TransactionsFilterMap = HashMap<String, SubscribeRequestFilterTransactions>;
 pub const PUMPFUN_PROGRAM_ID: Pubkey = pubkey!("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
 pub struct GrpcClient {

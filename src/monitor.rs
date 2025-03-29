@@ -1,6 +1,8 @@
+use std::str::FromStr;
+
 use jito_sdk_rust::JitoJsonRpcSDK;
 use serde_json::json;
-use solana_client::rpc_client::SerializableTransaction;
+use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
 use solana_program::pubkey;
 use solana_sdk::{
     bs58, compute_budget::ComputeBudgetInstruction, hash::Hash, pubkey::Pubkey, signature::Keypair,
@@ -12,17 +14,13 @@ use solana_transaction_status::{
 };
 use spl_associated_token_account::{
     get_associated_token_address, get_associated_token_address_with_program_id,
-    instruction::create_associated_token_account_idempotent,
 };
 use spl_token::instruction::close_account;
 
 use anyhow::{anyhow, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use solana_program::instruction::{AccountMeta, Instruction};
-use std::str::FromStr;
 
-// use rand::{rng, seq::IteratorRandom};
-use tracing::error;
 
 // program相关
 pub const SYSTEM_PROGRAM_ID: Pubkey = pubkey!("11111111111111111111111111111111");
@@ -239,6 +237,68 @@ fn process_ixs(target: Pubkey, inner_ixs: Vec<UiInnerInstructions>) -> Option<f3
 pub fn cal_pumpfun_price(virtual_sol_reserves: u64, virtual_token_reserves: u64) -> f32 {
     (virtual_sol_reserves as f32 / 10f32.powi(9)) / (virtual_token_reserves as f32 / 10f32.powi(6))
 }
+
+/// Represents a bonding curve for token pricing and liquidity management
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+pub struct BondingCurveAccount {
+    /// Unique identifier for the bonding curve
+    pub discriminator: u64,
+    /// Virtual token reserves used for price calculations
+    pub virtual_token_reserves: u64,
+    /// Virtual SOL reserves used for price calculations
+    pub virtual_sol_reserves: u64,
+    /// Actual token reserves available for trading
+    pub real_token_reserves: u64,
+    /// Actual SOL reserves available for trading
+    pub real_sol_reserves: u64,
+    /// Total supply of tokens
+    pub token_total_supply: u64,
+    /// Whether the bonding curve is complete/finalized
+    pub complete: bool,
+}
+
+
+/// Gets the Program Derived Address (PDA) for a token's bonding curve account
+///
+/// # Arguments 
+/// 
+/// * `mint` - Public key of the token mint
+/// 
+/// # Returns 
+///
+/// Returns Some(PDA) if derivation succeeds, or None if it fails
+pub const BONDING_CURVE_SEED: &[u8] = b"bonding-curve";    
+pub fn get_bonding_curve_pda(mint: &Pubkey) -> Option<Pubkey> {
+    let seeds: &[&[u8]; 2] = &[BONDING_CURVE_SEED, mint.as_ref()]; 
+    let program_id: &Pubkey = &PUMPFUN_PROGRAM_ID;  
+    let pda: Option<(Pubkey, u8)> = Pubkey::try_find_program_address(seeds, program_id);   
+    pda.map(|pubkey| pubkey.0)   
+}
+
+pub async fn get_pumpfun_reserve(rpc: &RpcClient, target: Pubkey) -> Option<BondingCurveAccount> {
+    let pda = get_bonding_curve_pda(&target)?;
+               
+    let account_data = rpc.get_account(&pda).await.expect("Failed to get account");
+
+        match BondingCurveAccount::try_from_slice(&account_data.data) {
+        Ok(bonding_curve_account) => {
+            Some(bonding_curve_account)
+        } 
+        Err(_e) => {  
+            None
+        }
+    }
+}
+
+
+#[tokio::test]
+async fn test_get_pumpfun_reserve() {
+    let rpc = "https://solana-rpc.publicnode.com";
+    let rpc_client = RpcClient::new(rpc.to_string());
+    let target = Pubkey::from_str("aYQoMtHaLqpXgDM5TD39ii6Fb8u4AoXKF4EhXBhpump").unwrap();
+    get_pumpfun_reserve(&rpc_client, target).await;
+}
+
 
 pub fn buy_amount_out_ix(
     mint: &Pubkey,
